@@ -1,0 +1,1 @@
+matlab  -nojvm -nodesktop -nosplash -r "run_saliency butterfly-1530151_960_720.jpg"
