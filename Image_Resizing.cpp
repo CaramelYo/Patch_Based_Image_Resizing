@@ -460,7 +460,7 @@ int main()
 	map<string, Patch> patchs;
 	vector<Quad> all_quads;
 	uint8_t *segmentation_img_data = segmentation_img.data;
-	int quad_width = 50, quad_height = 50;
+	int quad_width = 30, quad_height = 30;
 	// "rows - quad_height" to prevent from index out of range
 	int rows = segmentation_img.rows - quad_height, cols = segmentation_img.cols - quad_width, step = segmentation_img.step1();
 	int x, y;
@@ -816,10 +816,6 @@ int main()
 	Mat resized_img = Mat::zeros(new_img_rows, new_img_cols, CV_8UC3);
 	uint8_t *resized_img_data = resized_img.data, *img_data = img.data;
 	int resized_img_step1 = resized_img.step1(), img_step1 = img.step1();
-	// Mat small_quad_img = Mat::zeros(quad_height, quad_width, CV_8UC3);
-	Point2f small_quad_points[4]{ Point2f(0., 0.), Point2f(quad_width, 0.), Point2f(quad_width, quad_height), Point2f(0., quad_height) };
-	cout << "resized_img_step1 = " << resized_img_step1 << endl;
-	cout << "img_step1 = " << img_step1 << endl;
 
 	for (map<string, Patch>::iterator all_iter = patchs.begin(); all_iter != patchs.end(); ++all_iter) {
 		vector<Quad> quads = all_iter->second.get_quads();
@@ -828,6 +824,121 @@ int main()
 		for (int i = 0; i < quads_size; ++i) {
 			// cout << "quad " << i << endl;
 			
+			Point2f src_points[3]{ quads[i].get_vertex_point(2), quads[i].get_vertex_point(3), quads[i].get_vertex_point(0) }, dst_points[3];
+			int answers_indexes[3];
+
+			for (int j = 0; j < 3; ++j) {
+				answers_indexes[j] = ((int)ceil(src_points[j].y / quad_height)) * total_quad_x_size * 2 + ((int)ceil(src_points[j].x / quad_width)) * 2;
+				dst_points[j] = Point2f(answers[answers_indexes[j]], answers[answers_indexes[j] + 1]);
+			}
+
+			// Mat transformation = getAffineTransform(src_points, dst_points);
+			Mat transformation = getAffineTransform(dst_points, src_points);
+			double *data = (double *)transformation.data;
+			int temp_quad_width = 0, step1 = transformation.step1();
+
+			double transformation_values[2][3];
+
+			for (int y = 0; y < 2; ++y) {
+				for (int x = 0; x < 3; ++x) {
+					transformation_values[y][x] = data[y * step1 + x];
+				}
+			}
+
+			// for (int y = (int)src_points[2].y; y <= (int)src_points[0].y; ++y) {
+			temp_quad_width = 0;
+			for(int y = (int)dst_points[2].y; y <= (int)dst_points[0].y; ++y) {
+
+				// for (int x = (int)src_points[2].x, temp = 0; temp <= temp_quad_width; ++temp, ++x) {
+				for (int x = (int)dst_points[2].x, temp = 0; temp <= temp_quad_width; ++temp, ++x) {
+					float new_point[2]{0., 0.};
+
+					for (int j = 0; j < 2; ++j) {
+						new_point[j] += transformation_values[j][0] * x;
+						new_point[j] += transformation_values[j][1] * y;
+						new_point[j] += transformation_values[j][2];
+					}
+
+					// int resized_index = new_point[1] * resized_img_step1 + new_point[0] * 3, img_index = y * img_step1 + x * 3;
+					int resized_index = y * resized_img_step1 + x * 3, img_index = new_point[1] * img_step1 + new_point[0] * 3;
+					// cout << "resized_index = " << resized_index << endl;
+
+					for (int j = 0; j < 3; ++j) {
+						// cout << "resized_index = " << resized_index << " img_index = " << img_index << endl;
+						resized_img_data[resized_index + j] = img_data[img_index + j];
+						int test = resized_img_data[resized_index + j];
+					}
+				}
+
+				++temp_quad_width;
+
+				/*
+				for(int temp_quad_width = 0; i < )
+				for (int x = (int)src_points[2].x; x <= (int)src_points[0].x; ++x) {
+					++temp_quad_width;
+				}
+				*/
+			}
+
+			// cout << "transformation type is " << transformation.type() << endl;
+			
+			// cout << "down triangle" << endl;
+
+			for (int j = 0; j < 3; ++j) {
+				src_points[j] = quads[i].get_vertex_point(j);
+				answers_indexes[j] = ((int)ceil(src_points[j].y / quad_height)) * total_quad_x_size * 2 + ((int)ceil(src_points[j].x / quad_width)) * 2;
+				dst_points[j] = Point2f(answers[answers_indexes[j]], answers[answers_indexes[j] + 1]);
+			}
+
+			// transformation = getAffineTransform(src_points, dst_points);
+			transformation = getAffineTransform(dst_points, src_points);
+			data = (double *)transformation.data;
+			temp_quad_width = 0, step1 = transformation.step1();
+
+			for (int y = 0; y < 2; ++y) {
+				for (int x = 0; x < 3; ++x) {
+					transformation_values[y][x] = data[y * step1 + x];
+				}
+			}
+
+			temp_quad_width = quad_width;
+			// for (int y = (int)src_points[2].y; y <= (int)src_points[0].y; ++y) {
+			for(int y = (int)dst_points[0].y; y <= (int)dst_points[2].y; ++y) {
+
+				// for (int x = (int)src_points[2].x, temp = 0; temp <= temp_quad_width; ++temp, ++x) {
+				for(int x = (int)dst_points[0].x, temp = temp_quad_width; temp >= 0; --temp, ++x) {
+					int new_point[2]{ 0, 0 };
+
+					for (int j = 0; j < 2; ++j) {
+						new_point[j] += transformation_values[j][0] * x;
+						new_point[j] += transformation_values[j][1] * y;
+						new_point[j] += transformation_values[j][2];
+					}
+
+					// int resized_index = new_point[1] * resized_img_step1 + new_point[0] * 3, img_index = y * img_step1 + x * 3;
+					int resized_index = y * resized_img_step1 + x * 3, img_index = new_point[1] * img_step1 + new_point[0] * 3;
+					// cout << "resized_index = " << resized_index << endl;
+
+					for (int j = 0; j < 3; ++j) {
+						// cout << "resized_index = " << resized_index << " img_index = " << img_index << endl;
+						resized_img_data[resized_index + j] = img_data[img_index + j];
+						int test = resized_img_data[resized_index + j];
+					}
+				}
+
+				--temp_quad_width;
+
+				/*
+				for(int temp_quad_width = 0; i < )
+				for (int x = (int)src_points[2].x; x <= (int)src_points[0].x; ++x) {
+				++temp_quad_width;
+				}
+				*/
+			}
+
+
+			/*
+			// perspective transformation
 			Point2f src_points[4], dst_points[4];
 			int answers_indexes[4];
 
@@ -837,82 +948,41 @@ int main()
 				dst_points[j] = Point2f(answers[answers_indexes[j]], answers[answers_indexes[j] + 1]);
 			}
 
-			// Mat transformation = getPerspectiveTransform(src_points, dst_points);
-			// Mat transformation = getPerspectiveTransform(dst_points, src_points);
-			// Mat small_img = Mat(img, Rect(src_points[0].x, src_points[0].y, src_points[2].x - src_points[0].x, src_points[2].y - src_points[0].y));
-
-			Mat small_quad_img = Mat(quad_height, quad_width, CV_8UC3);
-			Mat t = getPerspectiveTransform(src_points, small_quad_points);
-			warpPerspective(img, small_quad_img, t, small_quad_img.size());
-
-			Mat tt = getPerspectiveTransform(dst_points, small_quad_points);
-			warpPerspective(small_quad_img, resized_img, tt, resized_img.size(), INTER_CUBIC + WARP_INVERSE_MAP, BORDER_TRANSPARENT);
-			// warpPerspective(small_quad_img, resized_img, tt, resized_img.size(), INTER_LINEAR + WARP_INVERSE_MAP, BORDER_TRANSPARENT);
-			// warpPerspective(small_quad_img, resized_img, tt, resized_img.size(), WARP_INVERSE_MAP, BORDER_TRANSPARENT);
-
-			// warpPerspective(small_img, resized_img, transformation, resized_img.size(), INTER_LINEAR + WARP_INVERSE_MAP, BORDER_TRANSPARENT);
-			// warpAffine(small_img, resized_img, transformation, resized_img.size(), INTER_LINEAR + WARP_INVERSE_MAP, BORDER_WRAP);
-		
-			/*
-			for (int j = 0; j < 4; ++j) {
-				cout << src_points[j] << " ";
-			}
-			cout << endl;
-
-			for (int j = 0; j < 4; ++j) {
-				cout << dst_points[j] << " ";
-			}
-			cout << endl;
+			Mat transformation = getPerspectiveTransform(src_points, dst_points);
 			*/
+			
 
-			// imshow("small img", small_img);
-			// imshow("small quad img", small_quad_img);
-			// imshow("resized img", resized_img);
-			// waitKey(0);
 
 			/*
-			for (int y = (int)dst_points[0].y; y <= (int)dst_points[2].y; ++y) {
-				for (int x = (int)dst_points[0].x; x <= (int)dst_points[2].x; ++x) {
-					Mat point = Mat(3, 1, CV_64FC1);
-					double *data = (double *)point.data;
-					int point_step1 = point.step1();
+			// cout << "quad " << i << endl;
+			Point2f src_points[3]{ quads[i].get_vertex_point(2), quads[i].get_vertex_point(3), quads[i].get_vertex_point(0) }, dst_points[3];
 
-					data[0 * point_step1 + 0] = x;
-					data[1 * point_step1 + 0] = y;
-					data[2 * point_step1 + 0] = 1.;
-					
-					Mat new_point = transformation * point;
-					data = (double *)new_point.data;
-					point_step1 = new_point.step1();
+			// int vars_center_point1_index = center_point1.y * cols * 2 + center_point1.x * 2, vars_center_point0_index = center_point0.y * cols * 2 + center_point0.x * 2;
+			// int vars_center_point1_index = center_quad_id * 2 + center_point1.x * 2, vars_center_point0_index = center_point0.y * cols * 2 + center_point0.x * 2;
+			int answers_indexes[3];
 
-					double x1 = data[0 * point_step1 + 0];
-					double y1 = data[1 * point_step1 + 0];
-					double w1 = data[2 * point_step1 + 0];
-
-					int new_x = (int)(x1 / w1), new_y = (int)(y1 / w1);
-
-					int resized_index = y * resized_img_step1 + x * 3;
-					int img_index = new_y * img_step1 + new_x * 3;
-
-					for (int j = 0; j < 3; ++j) {
-						// cout << "resized_index = " << resized_index << " img_index = " << img_index << endl;
-						resized_img_data[resized_index + j] = img_data[img_index + j];
-						// int test = resized_img_data[resized_index + j];
-					}
-				}
+			for (int j = 0; j < 3; ++j) {
+				answers_indexes[j] = ((int)ceil(src_points[j].y / quad_height)) * total_quad_x_size * 2 + ((int)ceil(src_points[j].x / quad_width)) * 2;
+				dst_points[j] = Point2f(answers[answers_indexes[j]], answers[answers_indexes[j] + 1]);
 			}
+
+			warpAffine(img, resizing_img, getAffineTransform(src_points, dst_points), resizing_img.size());
+
+			for (int j = 0; j < 3; ++j) {
+				src_points[j] = quads[i].get_vertex_point(j);
+				answers_indexes[j] = ((int)ceil(src_points[j].y / quad_height)) * total_quad_x_size * 2 + ((int)ceil(src_points[j].x / quad_width)) * 2;
+				dst_points[j] = Point2f(answers[answers_indexes[j]], answers[answers_indexes[j] + 1]);
+			}
+
+			warpAffine(img, resizing_img, getAffineTransform(src_points, dst_points), resizing_img.size());
 			*/
 		}
 
-		// cout << "a patch has been completed" << endl;
+		cout << "a patch has been completed" << endl;
 	}
 
 	namedWindow("Resized Image", CV_WINDOW_AUTOSIZE);
-	resize(resized_img, resized_img, resized_img.size());
 	imshow("Resized Image", resized_img);
-	Mat linear_img = Mat(new_img_rows, new_img_cols, CV_8UC3);
-	resize(img, linear_img, linear_img.size());
-	imshow("Linear Image", linear_img);
 	imwrite("Resized_" + original_img_name + original_img_type, resized_img);
 
 	waitKey(0);
